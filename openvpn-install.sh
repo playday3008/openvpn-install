@@ -238,7 +238,7 @@ function installQuestions() {
 	if [[ $APPROVE_IP =~ n ]]; then
 		read -rp "IP address: " -e -i "$IP" IP
 	fi
-	# If $IP is a private IP address, the server must be behind NAT
+	# If $IP is a private IP address, the server must be behind NAT
 	if echo "$IP" | grep -qE '^(10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.|192\.168)'; then
 		echo ""
 		echo "It seems this server is behind NAT. What is its public IPv4 address or hostname?"
@@ -702,7 +702,7 @@ function installOpenVPN() {
 
 	# Install the latest version of easy-rsa from source, if not already installed.
 	if [[ ! -d /etc/openvpn/easy-rsa/ ]]; then
-		local version="3.0.7"
+		local version="3.1.0"
 		wget -O ~/easy-rsa.tgz https://github.com/OpenVPN/easy-rsa/releases/download/v${version}/EasyRSA-${version}.tgz
 		mkdir -p /etc/openvpn/easy-rsa
 		tar xzf ~/easy-rsa.tgz --strip-components=1 --directory /etc/openvpn/easy-rsa
@@ -891,7 +891,7 @@ cert $SERVER_NAME.crt
 key $SERVER_NAME.key
 auth $HMAC_ALG
 cipher $CIPHER
-ncp-ciphers $CIPHER
+data-ciphers $CIPHER
 tls-server
 tls-version-min 1.2
 tls-cipher $CC_CIPHER
@@ -930,6 +930,11 @@ verb 3" >>/etc/openvpn/server.conf
 		sed -i 's|LimitNPROC|#LimitNPROC|' /etc/systemd/system/openvpn-server@.service
 		# Another workaround to keep using /etc/openvpn/
 		sed -i 's|/etc/openvpn/server|/etc/openvpn|' /etc/systemd/system/openvpn-server@.service
+
+		# Fix: https://github.com/angristan/openvpn-install/issues/788
+		if [[ $OS == 'arch' ]]; then
+			chown -R openvpn:network /etc/openvpn/* /etc/openvpn/client /etc/openvpn/server /var/log/openvpn
+		fi
 
 		systemctl daemon-reload
 		systemctl enable openvpn-server@server
@@ -1050,9 +1055,8 @@ verb 3" >>/etc/openvpn/client-template.txt
 		echo "compress $COMPRESSION_ALG" >>/etc/openvpn/client-template.txt
 	fi
 
-	# Generate the custom client.ovpn
-	newClient
-	echo "If you want to add more clients, you simply need to run this script another time!"
+	# Note about new clients creation
+	echo "If you want to add a client, you simply need to run this script again!"
 }
 
 function newClient() {
@@ -1074,6 +1078,13 @@ function newClient() {
 		read -rp "Select an option [1-2]: " -e -i 1 PASS
 	done
 
+	# Config directory of the user, where the client configuration will be written
+	clientsDir=$(realpath $(dirname "${BASH_SOURCE[0]}"))
+	clientsDir="${clientsDir}/configs"
+	if [ ! -d "${clientsDir}" ]; then
+		mkdir  "${clientsDir}"
+	fi
+
 	CLIENTEXISTS=$(tail -n +2 /etc/openvpn/easy-rsa/pki/index.txt | grep -c -E "/CN=$CLIENT\$")
 	if [[ $CLIENTEXISTS == '1' ]]; then
 		echo ""
@@ -1093,23 +1104,6 @@ function newClient() {
 		echo "Client $CLIENT added."
 	fi
 
-	# Home directory of the user, where the client configuration will be written
-	if [ -e "/home/${CLIENT}" ]; then
-		# if $1 is a user name
-		homeDir="/home/${CLIENT}"
-	elif [ "${SUDO_USER}" ]; then
-		# if not, use SUDO_USER
-		if [ "${SUDO_USER}" == "root" ]; then
-			# If running sudo as root
-			homeDir="/root"
-		else
-			homeDir="/home/${SUDO_USER}"
-		fi
-	else
-		# if not SUDO_USER, use /root
-		homeDir="/root"
-	fi
-
 	# Determine if we use tls-auth or tls-crypt
 	if grep -qs "^tls-crypt" /etc/openvpn/server.conf; then
 		TLS_SIG="1"
@@ -1118,7 +1112,7 @@ function newClient() {
 	fi
 
 	# Generates the custom client.ovpn
-	cp /etc/openvpn/client-template.txt "$homeDir/$CLIENT.ovpn"
+	cp /etc/openvpn/client-template.txt "$clientsDir/$CLIENT.ovpn"
 	{
 		echo "<ca>"
 		cat "/etc/openvpn/easy-rsa/pki/ca.crt"
@@ -1145,10 +1139,10 @@ function newClient() {
 			echo "</tls-auth>"
 			;;
 		esac
-	} >>"$homeDir/$CLIENT.ovpn"
+	} >>"$clientsDir/$CLIENT.ovpn"
 
 	echo ""
-	echo "The configuration file has been written to $homeDir/$CLIENT.ovpn."
+	echo "The configuration file has been written to $clientsDir/$CLIENT.ovpn."
 	echo "Download the .ovpn file and import it in your OpenVPN client."
 
 	exit 0
