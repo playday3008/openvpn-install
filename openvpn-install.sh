@@ -709,13 +709,17 @@ function installOpenVPN() {
 		rm -f ~/easy-rsa.tgz
 
 		cd /etc/openvpn/easy-rsa/ || return
+
+		# Create the PKI
+		./easyrsa init-pki
+
 		case $CERT_TYPE in
 		1)
-			echo "set_var EASYRSA_ALGO ec" >vars
-			echo "set_var EASYRSA_CURVE $CERT_CURVE" >>vars
+			echo "set_var EASYRSA_ALGO ec" > ./pki/vars
+			echo "set_var EASYRSA_CURVE $CERT_CURVE" >> ./pki/vars
 			;;
 		2)
-			echo "set_var EASYRSA_KEY_SIZE $RSA_KEY_SIZE" >vars
+			echo "set_var EASYRSA_KEY_SIZE $RSA_KEY_SIZE" > ./pki/vars
 			;;
 		esac
 
@@ -725,10 +729,9 @@ function installOpenVPN() {
 		SERVER_NAME="server_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)"
 		echo "$SERVER_NAME" >SERVER_NAME_GENERATED
 
-		echo "set_var EASYRSA_REQ_CN $SERVER_CN" >>vars
+		echo "set_var EASYRSA_REQ_CN $SERVER_CN" >> ./pki/vars
 
-		# Create the PKI, set up the CA, the DH params and the server certificate
-		./easyrsa init-pki
+		# Set up the CA, the DH params and the server certificate
 		./easyrsa --batch build-ca nopass
 
 		if [[ $DH_TYPE == "2" ]]; then
