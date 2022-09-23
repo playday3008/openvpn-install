@@ -1080,7 +1080,7 @@ function newClient() {
 
 	# Config directory of the user, where the client configuration will be written
 	clientsDir=$(realpath $(dirname "${BASH_SOURCE[0]}"))
-	clientsDir="${clientsDir}/configs"
+	clientsDir="${clientsDir}/clients"
 	if [ ! -d "${clientsDir}" ]; then
 		mkdir  "${clientsDir}"
 	fi
@@ -1140,6 +1140,13 @@ function newClient() {
 			;;
 		esac
 	} >>"$clientsDir/$CLIENT.ovpn"
+	
+	# Set owner to config file
+	if [ "${SUDO_USER}" ]; then
+		if [ "${SUDO_USER}" != "root" ]; then
+			chown "${SUDO_UID}:${SUDO_GID}" "$clientsDir/$CLIENT.ovpn"
+		fi
+	fi
 
 	echo ""
 	echo "The configuration file has been written to $clientsDir/$CLIENT.ovpn."
